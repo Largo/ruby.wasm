@@ -1,4 +1,4 @@
-FROM debian:bullseye
+FROM debian:bookworm
 
 ARG WASI_PRESET_ARGS_VERSION=0.1.1
 ARG NODE_MAJOR_VERSION=20
@@ -12,6 +12,7 @@ RUN set -eux; \
   apt-get update; \
   apt-get install ruby ruby-dev ruby-bundler nodejs \
     bison make autoconf git curl build-essential \
+    pkg-config libssl-dev \
     libyaml-dev zlib1g-dev gosu \
     libclang-13-dev -y; \
   apt-get clean; \
