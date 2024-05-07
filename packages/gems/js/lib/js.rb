@@ -268,10 +268,12 @@ class JS::Object
       # When a JS method is called with a ? suffix, it is treated as a predicate method,
       # and the return value is converted to a Ruby boolean value automatically.
       if self[sym]&.typeof?(:function)
-        return self.call(sym, *args, &block) == JS::True
+        result = self.call(sym, *args, &block)
+      else
+        result = self[sym]
       end
-
-      return self[sym] == JS::True
+      
+      return JS.global.Boolean(result) == JS::True
     end
 
     if sym_str.end_with?("=")

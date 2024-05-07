@@ -9,10 +9,12 @@ class RubyWasm::Packager
   #    * build
   # @param config [Hash] The build config used for building Ruby.
   # @param definition [Bundler::Definition] The Bundler definition.
-  def initialize(root, config = nil, definition = nil)
+  # @param features [RubyWasm::FeatureSet] The features used for packaging.
+  def initialize(root, config = nil, definition = nil, features: RubyWasm::FeatureSet.derive_from_env)
     @root = root
     @definition = definition
     @config = config
+    @features = features
   end
 
   # Packages the Ruby code into a Wasm binary. (including extensions)
@@ -28,14 +30,21 @@ class RubyWasm::Packager
     fs = RubyWasm::Packager::FileSystem.new(dest_dir, self)
     fs.package_ruby_root(tarball, executor)
 
-    ruby_wasm_bin = File.expand_path("bin/ruby", fs.ruby_root)
-    wasm_bytes = File.binread(ruby_wasm_bin).bytes
+    wasm_bytes = File.binread(File.join(fs.ruby_root, "bin", "ruby"))
+
+    ruby_core.build_gem_exts(executor, fs.bundle_dir)
 
     fs.package_gems
     fs.remove_non_runtime_files(executor)
-    fs.remove_stdlib(executor) unless options[:stdlib]
+    if options[:stdlib]
+      options[:without_stdlib_components].each do |component|
+        fs.remove_stdlib_component(executor, component)
+      end
+    else
+      fs.remove_stdlib(executor)
+    end
 
-    if full_build_options[:target] == "wasm32-unknown-wasip1" && !support_dynamic_linking?
+    if full_build_options[:target] == "wasm32-unknown-wasip1" && !features.support_dynamic_linking?
       # wasi-vfs supports only WASI target
       wasi_vfs = RubyWasmExt::WasiVfs.new
       wasi_vfs.map_dir("/bundle", fs.bundle_dir)
@@ -43,6 +52,7 @@ class RubyWasm::Packager
 
       wasm_bytes = wasi_vfs.pack(wasm_bytes)
     end
+    wasm_bytes = ruby_core.link_gem_exts(executor, fs.ruby_root, fs.bundle_dir, wasm_bytes)
 
     wasm_bytes = RubyWasmExt.preinitialize(wasm_bytes) if options[:optimize]
     wasm_bytes
@@ -58,12 +68,13 @@ class RubyWasm::Packager
   # Retrieves the specs from the Bundler definition, excluding the excluded gems.
   def specs
     return [] unless @definition
-    @definition.specs.reject { |spec| EXCLUDED_GEMS.include?(spec.name) }
+    @specs ||= @definition.resolve.materialize(@definition.requested_dependencies)
+      .reject { |spec| EXCLUDED_GEMS.include?(spec.name) }
+    @specs
   end
 
-  # Checks if dynamic linking is supported.
-  def support_dynamic_linking?
-    ENV["RUBY_WASM_EXPERIMENTAL_DYNAMIC_LINKING"] == "1"
+  def features
+    @features
   end
 
   ALL_DEFAULT_EXTS =

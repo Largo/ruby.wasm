@@ -1,4 +1,5 @@
-const { initRubyVM, rubyVersion } = require("./init");
+import { initRubyVM, rubyVersion } from "./init";
+import { describe, test, expect, vi } from "vitest"
 
 describe("RubyVM", () => {
   test("empty expression", async () => {
@@ -118,8 +119,11 @@ eval:11:in \`<main>'`
     expect(throwError).toThrowError(expectedBacktrace);
   });
 
-  test("exception while formatting exception backtrace", async () => {
-    const vm = await initRubyVM();
+  test.skipIf(
+    // TODO(katei): Investigate further why this test "crashes" on Node.js 22.
+    process.versions.node.startsWith("22.") && !process.env.ENABLE_COMPONENT_TESTS,
+  )("exception while formatting exception backtrace", async () => {
+    const vm = await initRubyVM({ suppressStderr: true });
     const throwError = () => {
       vm.eval(`
       class BrokenException < Exception
@@ -154,7 +158,7 @@ eval:11:in \`<main>'`
     `,
     `JS::RubyVM.eval("raise 'Exception from nested eval'")`,
   ])("nested VM rewinding operation should throw fatal error", async (code) => {
-    const vm = await initRubyVM();
+    const vm = await initRubyVM({ suppressStderr: true });
     const setVM = vm.eval(`proc { |vm| JS::RubyVM = vm }`);
     setVM.call("call", vm.wrap(vm));
     expect(() => {
@@ -162,7 +166,10 @@ eval:11:in \`<main>'`
     }).toThrowError("Ruby APIs that may rewind the VM stack are prohibited");
   });
 
-  test.each([`JS::RubyVM.evalAsync("")`])(
+  test.skipIf(
+    // TODO(katei): Investigate further why this test "crashes" on Node.js 22.
+    process.versions.node.startsWith("22.") && !process.env.ENABLE_COMPONENT_TESTS,
+  ).each([`JS::RubyVM.evalAsync("")`])(
     "nested VM rewinding operation should throw fatal error (async)",
     async (code) => {
       // Supress bugreport message triggered by the fatal error inside evalAsync
@@ -170,26 +177,15 @@ eval:11:in \`<main>'`
       const setVM = vm.eval(`proc { |vm| JS::RubyVM = vm }`);
       setVM.call("call", vm.wrap(vm));
 
-      // HACK: We need to capture all promises to avoid unhandled promise rejection
-      const promises = [];
-      const _Promise = global.Promise;
-      const spy = jest.spyOn(global, "Promise").mockImplementation((future) => {
-        const promise = new _Promise(future);
-        promises.push(promise);
-        return promise;
-      });
-
-      vm.evalAsync(code);
-
       const rejections = [];
-      for (const promise of promises) {
-        try {
-          await promise;
-        } catch (e) {
+      const _evalAsync = vm.evalAsync;
+      const spy = vi.spyOn(vm, "evalAsync").mockImplementation((code) => {
+        const promise = _evalAsync.call(vm, code).catch((e) => {
           rejections.push(e);
-        }
-      }
-
+        });
+        return promise
+      })
+      await vm.evalAsync(code)
       spy.mockReset();
 
       expect(rejections[0].message).toMatch(
@@ -199,7 +195,7 @@ eval:11:in \`<main>'`
   );
 
   test("caught raise in nested eval is ok", async () => {
-    const vm = await initRubyVM();
+    const vm = await initRubyVM({ suppressStderr: true });
     const setVM = vm.eval(`proc { |vm| JS::RubyVM = vm }`);
     setVM.call("call", vm.wrap(vm));
     expect(() => {

@@ -1,6 +1,6 @@
 {
   "name": "@ruby/wasm-wasi",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "WebAssembly port of CRuby with WASI",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -39,28 +39,29 @@
   ],
   "license": "MIT",
   "scripts": {
-    "test:run": "npm run test:unit && npm run test:jest && npm run test:e2e",
-    "test:jest": "NODE_OPTIONS=\"--experimental-wasi-unstable-preview1\" jest --coverage",
+    "test:run:all": "npm run test:run && ENABLE_COMPONENT_TESTS=1 npm run test:run",
+    "test:run": "npm run test:unit && npm run test:vitest -- --run && npm run test:e2e",
+    "test:vitest": "vitest ./test/",
     "test:unit": "./tools/run-test-unit.mjs",
     "test:e2e": "playwright install && npm run test:e2e:examples && npm run test:e2e:integrations",
     "test:e2e:examples": "playwright test -c test-e2e/playwright.examples.config.ts",
     "test:e2e:integrations": "playwright test -c test-e2e/playwright.integrations.config.ts",
     "serve:example": "BUNDLE_GEMFILE=../../../Gemfile bundle exec ruby -run -e httpd ./example -p 8085",
     "format": "prettier --write .",
-    "build:static": "./tools/pack-bindgen-src.sh ./dist",
+    "build:static": "./tools/pack-bindgen-src.rb ./dist",
     "build:rollup": "rollup -c rollup.config.mjs",
     "build:tsc": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json",
     "build": "npm run build:rollup && npm run build:tsc && npm run build:static && ./tools/post-build.sh ./dist"
   },
   "devDependencies": {
+    "@bjorn3/browser_wasi_shim": "^0.3.0",
+    "@bytecodealliance/jco": "../../../vendor/jco",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-typescript": "^11.1.6",
-    "@types/jest": "^29.5.11",
     "@types/node": "20.12.2",
-    "jest": "^29.7.0",
     "prettier": "^3.2.5",
-    "@bjorn3/browser_wasi_shim": "^0.2.19",
-    "typescript": "^5.4.3"
+    "typescript": "^5.4.3",
+    "vitest": "^1.5.3"
   },
   "dependencies": {
     "tslib": "^2.6.1"

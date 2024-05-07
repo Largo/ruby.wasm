@@ -39,6 +39,23 @@ class RubyWasm::Packager::FileSystem
     File.write(rbconfig, rbconfig_contents)
   end
 
+  def remove_stdlib_component(executor, component)
+    RubyWasm.logger.info "Removing stdlib component: #{component}"
+    case component
+    when "enc"
+      # Remove all encodings except for encdb.so and transdb.so
+      enc_dir = File.join(@ruby_root, "lib", "ruby", ruby_version, "wasm32-wasi", "enc")
+      puts File.join(enc_dir, "**/*.so")
+      Dir.glob(File.join(enc_dir, "**/*.so")).each do |entry|
+        next if entry.end_with?("encdb.so", "transdb.so")
+        RubyWasm.logger.debug "Removing stdlib encoding: #{entry}"
+        executor.rm_rf entry
+      end
+    else
+      raise "Unknown stdlib component: #{component}"
+    end
+  end
+
   def package_gems
     @packager.specs.each do |spec|
       RubyWasm.logger.info "Packaging gem: #{spec.full_name}"
@@ -66,12 +83,14 @@ class RubyWasm::Packager::FileSystem
   end
 
   def remove_non_runtime_files(executor)
-    %w[
-      **/*.so
+    patterns = %w[
       usr/local/lib/libruby-static.a
       usr/local/bin/ruby
       usr/local/include
-    ].each do |pattern|
+    ]
+
+    patterns << "**/*.so" unless @packager.features.support_dynamic_linking?
+    patterns.each do |pattern|
       Dir
         .glob(File.join(@dest_dir, pattern))
         .each do |entry|

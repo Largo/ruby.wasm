@@ -18,14 +18,23 @@ class RubyWasm::Packager
     patches: Array[String],
   }
 
-  type build_config = Hash[untyped, untyped]
+  type build_config = {
+    target: String,
+    src: RubyWasm::Packager::build_source,
+    default_exts: String,
+    suffix: String,
+    gem_home: String?,
+  }
+
+  type bytes = String
 
   @definition: untyped
   @config: build_config
+  @features: RubyWasm::FeatureSet
 
-  def initialize: (string root, build_config?, untyped? definition) -> void
+  def initialize: (string root, build_config?, untyped? definition, features: RubyWasm::FeatureSet) -> void
 
-  def package: (RubyWasm::BuildExecutor, string dest_dir, untyped options) -> Array[Integer]
+  def package: (RubyWasm::BuildExecutor, string dest_dir, untyped options) -> bytes
 
   @ruby_core_build: RubyWasm::Packager::Core?
   def ruby_core_build: () -> RubyWasm::Packager::Core
@@ -33,7 +42,7 @@ class RubyWasm::Packager
   EXCLUDED_GEMS: Array[string]
 
   def specs: () -> Array[untyped]
-  def support_dynamic_linking?: () -> bool
+  def features: () -> RubyWasm::FeatureSet
 
   def root: () -> string
 
@@ -48,6 +57,8 @@ class RubyWasm::Packager
     @packager: RubyWasm::Packager
     def initialize: (RubyWasm::Packager) -> void
     def build: (RubyWasm::BuildExecutor, untyped options) -> String
+    def build_gem_exts: (RubyWasm::BuildExecutor, string gem_home) -> void
+    def link_gem_exts: (RubyWasm::BuildExecutor, string ruby_root, string gem_home, bytes module_bytes) -> bytes
 
     extend Forwardable
 
@@ -63,12 +74,18 @@ class RubyWasm::Packager
       def initialize: (RubyWasm::Packager) -> void
       def build: (RubyWasm::BuildExecutor, untyped options) -> String
       def specs_with_extensions: () -> Array[[untyped, Array[string]]]
+      def build_gem_exts: (RubyWasm::BuildExecutor, string gem_home) -> void
+      def link_gem_exts: (RubyWasm::BuildExecutor, string ruby_root, string gem_home, bytes module_bytes) -> bytes
+      def wasi_exec_model: () -> String
     end
 
     class DynamicLinking < RubyWasm::Packager::Core::BuildStrategy
       @build: RubyWasm::Build
       def derive_build: () -> RubyWasm::Build
       def name: () -> string
+
+      private def _build_gem_exts: (RubyWasm::BuildExecutor, RubyWasm::Build, string gem_home) -> void
+      private def _link_gem_exts: (RubyWasm::BuildExecutor, RubyWasm::Build, string ruby_root, string gem_home, bytes module_bytes) -> bytes
     end
 
     class StaticLinking < RubyWasm::Packager::Core::BuildStrategy
@@ -89,6 +106,7 @@ class RubyWasm::Packager
     def initialize: (string dest_dir, RubyWasm::Packager) -> void
     def package_ruby_root: (String tarball, RubyWasm::BuildExecutor) -> void
     def remove_stdlib: (RubyWasm::BuildExecutor) -> void
+    def remove_stdlib_component: (RubyWasm::BuildExecutor, string) -> void
     def package_gems: () -> void
 
     def setup_rb_content: () -> String
@@ -107,5 +125,9 @@ class RubyWasm::Packager
     def bundle_relative_path: () -> String
     def ruby_version: () -> String
     def rubyarchdir: () -> String
+  end
+
+  module ComponentAdapter
+    def self.wasi_snapshot_preview1: (String exec_model) -> String
   end
 end

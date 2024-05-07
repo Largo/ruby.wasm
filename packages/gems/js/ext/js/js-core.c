@@ -2,7 +2,7 @@
 
 #include "ruby.h"
 
-#include "bindgen/rb-js-abi-host.h"
+#include "types.h"
 
 // MARK: - Ruby extension
 
@@ -28,7 +28,7 @@ static VALUE rb_cJS_Error;
 static ID i_to_js;
 
 struct jsvalue {
-  rb_js_abi_host_js_abi_value_t abi;
+  rb_js_abi_host_own_js_abi_value_t abi;
 };
 
 static void jsvalue_mark(void *p) {}
@@ -57,7 +57,7 @@ static VALUE jsvalue_s_allocate(VALUE klass) {
   return obj;
 }
 
-static VALUE jsvalue_s_new(rb_js_abi_host_js_abi_value_t abi) {
+static VALUE jsvalue_s_new(rb_js_abi_host_own_js_abi_value_t abi) {
   struct jsvalue *p;
   VALUE obj = TypedData_Make_Struct(rb_cJS_Object, struct jsvalue,
                                     &jsvalue_data_type, p);
@@ -296,14 +296,15 @@ static VALUE _rb_js_obj_call(int argc, VALUE *argv, VALUE obj) {
       rb_raise(rb_eTypeError, "argument %d is not a JS::Object like object",
                1 + i);
     }
-    abi_args.ptr[i - 1] = check_jsvalue(arg)->abi;
+    abi_args.ptr[i - 1] = borrow_js_value(check_jsvalue(arg)->abi);
     rb_ary_push(rv_args, arg);
   }
 
   if (rb_block_given_p()) {
     VALUE proc = rb_block_proc();
     VALUE rb_proc = _rb_js_try_convert(rb_mJS, proc);
-    abi_args.ptr[function_arguments_count - 1] = check_jsvalue(rb_proc)->abi;
+    abi_args.ptr[function_arguments_count - 1] =
+        borrow_js_value(check_jsvalue(rb_proc)->abi);
     rb_ary_push(rv_args, rb_proc);
   }
 
@@ -332,7 +333,7 @@ static VALUE _rb_js_obj_typeof(VALUE obj) {
   struct jsvalue *p = check_jsvalue(obj);
   rb_js_abi_host_string_t ret0;
   rb_js_abi_host_js_value_typeof(p->abi, &ret0);
-  return rb_str_new(ret0.ptr, ret0.len);
+  return rb_str_new((const char *)ret0.ptr, ret0.len);
 }
 
 /*
@@ -352,7 +353,7 @@ static VALUE _rb_js_obj_to_s(VALUE obj) {
   struct jsvalue *p = check_jsvalue(obj);
   rb_js_abi_host_string_t ret0;
   rb_js_abi_host_js_value_to_string(p->abi, &ret0);
-  return rb_utf8_str_new(ret0.ptr, ret0.len);
+  return rb_utf8_str_new((const char *)ret0.ptr, ret0.len);
 }
 
 /*
@@ -376,10 +377,10 @@ static VALUE _rb_js_obj_to_i(VALUE obj) {
   rb_js_abi_host_raw_integer_t ret;
   rb_js_abi_host_js_value_to_integer(p->abi, &ret);
   VALUE result;
-  if (ret.tag == RB_JS_ABI_HOST_RAW_INTEGER_F64) {
-    result = rb_dbl2big(ret.val.f64);
+  if (ret.tag == RB_JS_ABI_HOST_RAW_INTEGER_AS_FLOAT) {
+    result = rb_dbl2big(ret.val.as_float);
   } else {
-    result = rb_cstr2inum(ret.val.bignum.ptr, 10);
+    result = rb_cstr2inum((const char *)ret.val.bignum.ptr, 10);
   }
   rb_js_abi_host_raw_integer_free(&ret);
   return result;
@@ -406,10 +407,10 @@ static VALUE _rb_js_obj_to_f(VALUE obj) {
   rb_js_abi_host_raw_integer_t ret;
   VALUE result;
   rb_js_abi_host_js_value_to_integer(p->abi, &ret);
-  if (ret.tag == RB_JS_ABI_HOST_RAW_INTEGER_F64) {
-    result = rb_float_new(ret.val.f64);
+  if (ret.tag == RB_JS_ABI_HOST_RAW_INTEGER_AS_FLOAT) {
+    result = rb_float_new(ret.val.as_float);
   } else {
-    result = DBL2NUM(rb_cstr_to_dbl(ret.val.bignum.ptr, FALSE));
+    result = DBL2NUM(rb_cstr_to_dbl((const char *)ret.val.bignum.ptr, FALSE));
   }
   rb_js_abi_host_raw_integer_free(&ret);
   return result;
@@ -437,9 +438,14 @@ static VALUE _rb_js_import_from_js(VALUE obj) {
  *  Returns +obj+ wrapped by JS class RbValue.
  */
 static VALUE _rb_js_obj_wrap(VALUE obj, VALUE wrapping) {
+#if JS_ENABLE_COMPONENT_MODEL
+  rb_abi_stage_rb_value_to_js(wrapping);
+  return jsvalue_s_new(rb_js_abi_host_rb_object_to_js_rb_value());
+#else
   rb_abi_lend_object(wrapping);
   return jsvalue_s_new(
       rb_js_abi_host_rb_object_to_js_rb_value((uint32_t)wrapping));
+#endif
 }
 
 /*
@@ -505,8 +511,13 @@ static VALUE _rb_js_false_to_js(VALUE obj) {
  *  Returns +self+ as a JS::Object.
  */
 static VALUE _rb_js_proc_to_js(VALUE obj) {
+#if JS_ENABLE_COMPONENT_MODEL
+  rb_abi_stage_rb_value_to_js(obj);
+  return jsvalue_s_new(ruby_js_js_runtime_proc_to_js_function());
+#else
   rb_abi_lend_object(obj);
   return jsvalue_s_new(rb_js_abi_host_proc_to_js_function((uint32_t)obj));
+#endif
 }
 
 /*

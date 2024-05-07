@@ -1,11 +1,15 @@
-const fs = require("fs/promises");
-const path = require("path");
-const { WASI } = require("wasi");
-const { RubyVM } = require("../dist/cjs/index");
-const { DefaultRubyVM } = require("../dist/cjs/node");
+import * as path from "path";
+import * as fs from "fs/promises";
+import { WASI } from "wasi";
+import { RubyVM } from "../src/index";
+import { DefaultRubyVM } from "../src/node";
+import { describe, test, expect } from "vitest"
 
 const initRubyVM = async (rubyModule, args) => {
-  const wasi = new WASI();
+  const wasi = new WASI({
+    version: "preview1",
+    returnOnExit: true,
+  });
   const vm = new RubyVM();
   const imports = {
     wasi_snapshot_preview1: wasi.wasiImport,
@@ -28,7 +32,6 @@ const initRubyVM = async (rubyModule, args) => {
 };
 
 describe("Packaging validation", () => {
-  jest.setTimeout(20 /*sec*/ * 1000);
   if (!process.env.RUBY_NPM_PACKAGE_ROOT) {
     test.skip("skip", () => {});
     return;

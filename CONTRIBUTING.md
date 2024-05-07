@@ -110,7 +110,8 @@ $ git commit -m"Bump version to 0.6.0"
 $ git tag 0.6.0
 $ git push origin 0.6.0
 $ for pkg in pkg/ruby_wasm-*; do gem push $pkg; done
-$ (cd packages/gems/js/ && gem build && gem push js-*.gem)
+$ gem build && gem push ruby_wasm-*.gem && rm ruby_wasm-*.gem
+$ (cd packages/gems/js/ && gem build && gem push js-*.gem && rm js-*.gem)
 ```
 
 ## Release Channels
@@ -124,5 +125,5 @@ $ npm install --save @ruby/wasm-wasi@latest
 # or if you want the nightly snapshot
 $ npm install --save @ruby/wasm-wasi@next
 # or you can specify the exact snapshot version
-$ npm install --save @ruby/wasm-wasi@2.5.0-2024-01-28-a
+$ npm install --save @ruby/wasm-wasi@2.6.0-2024-05-05-a
 ```

@@ -53,6 +53,8 @@ module RubyWasm
         target_triplet: "wasm32-unknown-wasip1",
         profile: "full",
         stdlib: true,
+        without_stdlib_components: [],
+        dest_dir: nil,
         disable_gems: false,
         gemfile: nil,
         patches: [],
@@ -104,8 +106,16 @@ module RubyWasm
             options[:stdlib] = stdlib
           end
 
+          opts.on("--without-stdlib COMPONENT", "Exclude stdlib component") do |component|
+            options[:without_stdlib_components] << component
+          end
+
           opts.on("--disable-gems", "Disable gems") do
             options[:disable_gems] = true
+          end
+
+          opts.on("--dest-dir PATH", "(Experimental) Destination directory") do |path|
+            options[:dest_dir] = path
           end
 
           opts.on("-p", "--patch PATCH", "Apply a patch") do |patch|
@@ -122,8 +132,19 @@ module RubyWasm
         end
         .parse!(args)
 
+      __skip__ = if defined?(Bundler)
+        Bundler.settings.temporary(force_ruby_platform: true) do
+          do_build_with_force_ruby_platform(options)
+        end
+      else
+        do_build_with_force_ruby_platform(options)
+      end
+    end
+
+    def do_build_with_force_ruby_platform(options)
       verbose = RubyWasm.logger.level == :debug
       executor = RubyWasm::BuildExecutor.new(verbose: verbose)
+
       packager = self.derive_packager(options)
 
       if options[:print_ruby_cache_key]
@@ -138,7 +159,9 @@ module RubyWasm
 
       require "tmpdir"
 
-      if options[:save_temps]
+      if dest_dir = options[:dest_dir]
+        self.do_build(executor, dest_dir, packager, options)
+      elsif options[:save_temps]
         tmpdir = Dir.mktmpdir
         self.do_build(executor, tmpdir, packager, options)
         @stderr.puts "Temporary files are saved to #{tmpdir}"
@@ -158,11 +181,12 @@ module RubyWasm
     private
 
     def build_config(options)
+      build_source, all_default_exts = compute_build_source(options)
       # @type var config: Packager::build_config
-      config = { target: options[:target_triplet], src: compute_build_source(options) }
+      config = { target: options[:target_triplet], src: build_source }
       case options[:profile]
       when "full"
-        config[:default_exts] = config[:src][:all_default_exts]
+        config[:default_exts] = all_default_exts || ""
         env_additional_exts = ENV["RUBY_WASM_ADDITIONAL_EXTS"] || ""
         unless env_additional_exts.empty?
           config[:default_exts] += "," + env_additional_exts
@@ -192,7 +216,7 @@ module RubyWasm
           local_source = { type: "local", path: src_name }
           # @type var local_source: RubyWasm::Packager::build_source
           local_source = local_source.merge(name: "local", patches: [])
-          return local_source
+          return [local_source, nil]
         end
         # Otherwise, it's an unknown source.
         raise(
@@ -201,7 +225,9 @@ module RubyWasm
       end
       # Apply user-specified patches in addition to bundled patches.
       source[:patches].concat(options[:patches])
-      source
+      # @type var all_default_exts: String
+      __skip__ = all_default_exts = source[:all_default_exts]
+      [source, all_default_exts]
     end
 
     # Retrieves the alias definitions for the Ruby sources.
@@ -216,12 +242,12 @@ module RubyWasm
         },
         "3.3" => {
           type: "tarball",
-          url: "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.0.tar.gz",
+          url: "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.1.tar.gz",
           all_default_exts: "bigdecimal,cgi/escape,continuation,coverage,date,dbm,digest/bubblebabble,digest,digest/md5,digest/rmd160,digest/sha1,digest/sha2,etc,fcntl,fiber,gdbm,json,json/generator,json/parser,nkf,objspace,pathname,psych,racc/cparse,rbconfig/sizeof,ripper,stringio,strscan,monitor,zlib,openssl",
         },
         "3.2" => {
           type: "tarball",
-          url: "https://cache.ruby-lang.org/pub/ruby/3.2/ruby-3.2.3.tar.gz",
+          url: "https://cache.ruby-lang.org/pub/ruby/3.2/ruby-3.2.4.tar.gz",
           all_default_exts: "bigdecimal,cgi/escape,continuation,coverage,date,dbm,digest/bubblebabble,digest,digest/md5,digest/rmd160,digest/sha1,digest/sha2,etc,fcntl,fiber,gdbm,json,json/generator,json/parser,nkf,objspace,pathname,psych,racc/cparse,rbconfig/sizeof,ripper,stringio,strscan,monitor,zlib,openssl",
         }
       }
@@ -281,7 +307,7 @@ module RubyWasm
     end
 
     def derive_packager(options)
-      definition = nil
+      __skip__ = definition = nil
       __skip__ = if defined?(Bundler) && !options[:disable_gems]
         begin
           # Silence Bundler UI if --print-ruby-cache-key is specified not to bother the JSON output.
@@ -293,7 +319,11 @@ module RubyWasm
           Bundler.ui.level = old_level
         end
       end
-      RubyWasm::Packager.new(root, build_config(options), definition)
+      RubyWasm.logger.info "Using Gemfile: #{definition.gemfiles}" if definition
+      RubyWasm::Packager.new(
+        root, build_config(options), definition,
+        features: RubyWasm::FeatureSet.derive_from_env
+      )
     end
 
     def do_print_ruby_cache_key(packager)
@@ -315,9 +345,9 @@ module RubyWasm
       RubyWasm.logger.info "Size: #{SizeFormatter.format(wasm_bytes.size)}"
       case options[:output]
       when "-"
-        @stdout.write wasm_bytes.pack("C*")
+        @stdout.write wasm_bytes
       else
-        File.binwrite(options[:output], wasm_bytes.pack("C*"))
+        File.binwrite(options[:output], wasm_bytes)
         RubyWasm.logger.debug "Wrote #{options[:output]}"
       end
     end

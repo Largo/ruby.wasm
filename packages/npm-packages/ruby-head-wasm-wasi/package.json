@@ -1,6 +1,6 @@
 {
   "name": "@ruby/head-wasm-wasi",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Ruby head built on WASI",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -29,7 +29,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "RUBY_NPM_PACKAGE_ROOT=../ruby-head-wasm-wasi npm -C ../ruby-wasm-wasi run test:run",
+    "test": "RUBY_NPM_PACKAGE_ROOT=../ruby-head-wasm-wasi npm -C ../ruby-wasm-wasi run test:run:all",
     "build:deps": "cd ../ruby-wasm-wasi && npm run build",
     "build:static:files": "../ruby-wasm-wasi/tools/pack-static-files.sh ./dist",
     "build:static:compat": "../ruby-wasm-wasi/tools/pack-compat-shim.mjs --dist=./dist --pkg=ruby-head-wasm-wasi",

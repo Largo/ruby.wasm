@@ -17,17 +17,17 @@ Try ruby.wasm in [TryRuby](https://try.ruby-lang.org/playground#code=puts+RUBY_D
 - [Complete Examples](https://github.com/ruby/ruby.wasm/tree/main/packages/npm-packages/ruby-wasm-wasi/example)
 - [Community Showcase](https://github.com/ruby/ruby.wasm/wiki/Showcase)
 
-## Quick Example: Ruby on browser
+## Quick Example: Ruby on Web browser
 
 Create and save `index.html` page with the following contents:
 
 ```html
 <html>
-  <script src="https://cdn.jsdelivr.net/npm/@ruby/3.3-wasm-wasi@2.5.0/dist/browser.script.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ruby/3.3-wasm-wasi@2.6.0/dist/browser.script.iife.js"></script>
   <script type="text/ruby">
     require "js"
 
-    puts RUBY_VERSION # => Hello, world! (printed to the browser console)
+    puts RUBY_VERSION # (Printed to the Web browser console)
     JS.global[:document].write "Hello, world!"
   </script>
 </html>

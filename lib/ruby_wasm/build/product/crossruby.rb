@@ -5,11 +5,12 @@ module RubyWasm
   class CrossRubyExtProduct < BuildProduct
     attr_reader :name
 
-    def initialize(srcdir, toolchain, ext_relative_path: nil)
+    def initialize(srcdir, toolchain, features:, ext_relative_path: nil)
       @srcdir, @toolchain = srcdir, toolchain
       # ext_relative_path is relative path from build dir
       # e.g. cgi-0.3.6/ext/cgi/escape
       @ext_relative_path = ext_relative_path || File.basename(srcdir)
+      @features = features
       @name = @ext_relative_path
     end
 
@@ -33,6 +34,7 @@ module RubyWasm
     def make_args(crossruby)
       make_args = []
       make_args << "CC=#{@toolchain.cc}"
+      make_args << "CXX=#{@toolchain.cc}"
       make_args << "LD=#{@toolchain.ld}"
       make_args << "AR=#{@toolchain.ar}"
       make_args << "RANLIB=#{@toolchain.ranlib}"
@@ -40,16 +42,20 @@ module RubyWasm
       make_args
     end
 
-    def build(executor, crossruby)
+    def build(executor, crossruby, extra_mkargs = [])
       objdir = product_build_dir crossruby
       executor.mkdir_p objdir
       do_extconf executor, crossruby
+
+      executor.system "make", "-C", objdir, *make_args(crossruby), "clean"
+      build_target = crossruby.target.pic? ? "install-so" : "static"
       executor.system "make",
                       "-j#{executor.process_count}",
                       "-C",
                       "#{objdir}",
                       *make_args(crossruby),
-                      "static"
+                      build_target,
+                      *extra_mkargs
       # A ext can provide link args by link.filelist. It contains only built archive file by default.
       unless File.exist?(linklist(crossruby))
         executor.write(
@@ -60,6 +66,24 @@ module RubyWasm
     end
 
     def do_extconf(executor, crossruby)
+      unless crossruby.target.pic?
+        self.do_legacy_extconf(executor, crossruby)
+        return
+      end
+      objdir = product_build_dir crossruby
+      source = crossruby.source
+      rbconfig_rb = Dir.glob(File.join(crossruby.dest_dir, "usr/local/lib/ruby/*/wasm32-wasi/rbconfig.rb")).first
+      raise "rbconfig.rb not found" unless rbconfig_rb
+      extconf_args = [
+        "-C", objdir,
+        "#{@srcdir}/extconf.rb",
+        "--target-rbconfig=#{rbconfig_rb}",
+      ]
+      extconf_args << "--enable-component-model" if @features.support_component_model?
+      executor.system Gem.ruby, *extconf_args
+    end
+
+    def do_legacy_extconf(executor, crossruby)
       objdir = product_build_dir crossruby
       source = crossruby.source
       extconf_args = [
@@ -85,8 +109,10 @@ module RubyWasm
         # like "cgi/escape" instead of "escape"
         "-e",
         %Q(require "json"; File.write("#{metadata_json(crossruby)}", JSON.dump({target: $target}))),
-        "-I#{crossruby.build_dir}"
+        "-I#{crossruby.build_dir}",
+        "--",
       ]
+      extconf_args << "--enable-component-model" if @features.support_component_model?
       # Clear RUBYOPT to avoid loading unrelated bundle setup
       executor.system crossruby.baseruby_path,
                       *extconf_args,
@@ -114,7 +140,7 @@ module RubyWasm
   end
 
   class CrossRubyProduct < AutoconfProduct
-    attr_reader :source, :toolchain
+    attr_reader :target, :source, :toolchain
     attr_accessor :user_exts,
                   :wasmoptflags,
                   :cppflags,
@@ -155,10 +181,14 @@ module RubyWasm
       @user_exts.any?
     end
 
+    def need_extinit_obj?
+      need_exts_build? && !@target.pic?
+    end
+
     def build_exts(executor)
       @user_exts.each do |prod|
         executor.begin_section prod.class, prod.name, "Building"
-        prod.build(executor, self)
+        prod.build(executor, self, [])
         executor.end_section prod.class, prod.name
       end
     end
@@ -181,7 +211,7 @@ module RubyWasm
 
       executor.begin_section self.class, name, "Building"
 
-      if need_exts_build?
+      if need_extinit_obj?
         executor.mkdir_p File.dirname(extinit_obj)
         executor.system "ruby",
                         extinit_c_erb,
@@ -312,7 +342,7 @@ module RubyWasm
 
       args.concat(self.tools_args)
       (@user_exts || []).each { |lib| xldflags << "@#{lib.linklist(self)}" }
-      xldflags << extinit_obj if need_exts_build?
+      xldflags << extinit_obj if need_extinit_obj?
 
       cflags = @cflags.dup
       xcflags = @xcflags.dup
