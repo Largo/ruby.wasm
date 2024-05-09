@@ -170,14 +170,27 @@ class JS::Object
   # * If the JavaScript method name ends with a question mark (?)
   def method_missing(sym, *args, &block)
     sym_str = sym.to_s
-    if sym_str.end_with?("?")
+    sym = sym_str[0..-2].to_sym if sym_str.end_with?("?") or sym_str.end_with?("=")
+    if self === JS::Null
+      super
+    elsif sym_str.end_with?("?")
       # When a JS method is called with a ? suffix, it is treated as a predicate method,
       # and the return value is converted to a Ruby boolean value automatically.
-      result = self.call(sym_str[0..-2].to_sym, *args, &block)
+      if self[sym].typeof == "function"
+        result = self.call(sym, *args, &block)
+      else
+        result = self[sym]
+      end
 
       # Type coerce the result to boolean type
       # to match the true/false determination in JavaScript's if statement.
       JS.global.Boolean(result) == JS::True
+    elsif sym_str.end_with?("=")
+      if args[0].respond_to?(:to_js)
+        self[sym] = args[0].to_js
+      else
+        self[sym] = args[0]
+      end
     elsif self[sym].typeof == "function"
       self.call(sym, *args, &block)
     else

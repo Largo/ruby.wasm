@@ -34,4 +34,8 @@ class JS::TestJS < Test::Unit::TestCase
     assert_equal "true", JS::True.to_s
     assert_equal "false", JS::False.to_s
   end
+
+  def test_attributes_method_missing
+    assert_true JS.is_a?(JS.global[:document].document, JS.global.document)
+  end
 end
